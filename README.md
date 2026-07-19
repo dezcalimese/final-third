@@ -84,10 +84,11 @@ npm run dev:web             # starts the Next.js app on :3000, in a second termi
 ```
 
 Open http://localhost:3000. `packages/relay/.env` (copy from `.env.example`) controls
-`REPLAY_FIXTURE_ID` and `REPLAY_SPEED`. The default is `REPLAY_SPEED=3` (a 90-minute
-match completes in ~30 minutes). The 4-second lock window scales with speed — at 3x
-you get ~1.3 seconds to pick, which is tight but playable. Use `REPLAY_SPEED=1` for
-real-time pacing, or higher values for quick iteration on the engine.
+`REPLAY_FIXTURE_ID` and `REPLAY_SPEED`. The default is `REPLAY_SPEED=2` (a 90-minute
+match plays in ~45 minutes). The 4-second lock window scales with speed — at 2x you
+get ~2 seconds to pick. Each user gets a fresh replay from kickoff when they click a
+match. Use `REPLAY_SPEED=1` for real-time pacing, or higher values for quick
+iteration on the engine.
 
 ### Live mode
 

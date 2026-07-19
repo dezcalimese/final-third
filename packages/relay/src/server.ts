@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
 import { Redis } from "ioredis";
-import { getKnownFixture, type GuessRequest, type LullGuessRequest } from "@final-third/shared";
+import { getKnownFixture, getTeamTheme, type GuessRequest, type LullGuessRequest } from "@final-third/shared";
 import { ReplaySource } from "./feed/ReplaySource.js";
 import { LiveSource } from "./feed/LiveSource.js";
 import { TxLineAuth } from "./txlineAuth.js";
@@ -20,7 +20,7 @@ const DATA_DIR = path.resolve(__dirname, "../../../data/raw");
 
 const PORT = Number(process.env.PORT ?? 4000);
 const FEED_MODE = process.env.FEED_MODE ?? "replay";
-const REPLAY_SPEED = Number(process.env.REPLAY_SPEED ?? 3);
+const REPLAY_SPEED = Number(process.env.REPLAY_SPEED ?? 2);
 const REPLAY_START_OFFSET_MS = Number(process.env.REPLAY_START_OFFSET_MS ?? 0);
 const LIVE_FIXTURE_ID = process.env.LIVE_FIXTURE_ID;
 
@@ -66,6 +66,14 @@ async function main() {
   const leaderboard = buildLeaderboardStore();
   const rooms = new Map<string, GameRoom>();
 
+  // Per-connection replay rooms: each SSE connection gets its own fresh replay
+  // starting from kickoff. Keyed by playerId so guess/leaderboard calls find the
+  // right room. For live mode, one shared room is used instead.
+  const playerRooms = new Map<string, GameRoom>();
+
+  // Fixture metadata (discovered once at startup for the /api/fixtures listing)
+  const replayFixtures = FEED_MODE === "live" ? [] : discoverReplayFixtures();
+
   if (FEED_MODE === "live") {
     const apiToken = process.env.TXLINE_API_TOKEN;
     if (!apiToken) throw new Error("FEED_MODE=live requires TXLINE_API_TOKEN to be set.");
@@ -78,24 +86,28 @@ async function main() {
     rooms.set(LIVE_FIXTURE_ID, room);
     console.log(`Live room started: ${LIVE_FIXTURE_ID}`);
   } else {
-    const fixtures = discoverReplayFixtures();
-    if (fixtures.length === 0) {
+    if (replayFixtures.length === 0) {
       throw new Error(
         `No fixture data in ${DATA_DIR}. Run \`npm run fetch:historical\` or \`npm run gen:synthetic\`.`
       );
     }
-    for (const f of fixtures) {
-      const feed = new ReplaySource({
-        filePath: f.filePath,
-        speed: REPLAY_SPEED,
-        loop: true,
-        startOffsetMs: REPLAY_START_OFFSET_MS,
-      });
-      const room = new GameRoom(f.fixtureId, feed, leaderboard);
-      room.start();
-      rooms.set(f.fixtureId, room);
-      console.log(`Replay room started: ${f.fixtureId} (${f.label}) speed=${REPLAY_SPEED}x`);
+    for (const f of replayFixtures) {
+      console.log(`Replay fixture available: ${f.fixtureId} (${f.label}) speed=${REPLAY_SPEED}x`);
     }
+  }
+
+  function createReplayRoom(fixtureId: string): GameRoom | null {
+    const f = replayFixtures.find((rf) => rf.fixtureId === fixtureId);
+    if (!f) return null;
+    const feed = new ReplaySource({
+      filePath: f.filePath,
+      speed: REPLAY_SPEED,
+      loop: true,
+      startOffsetMs: REPLAY_START_OFFSET_MS,
+    });
+    const room = new GameRoom(f.fixtureId, feed, leaderboard);
+    room.start();
+    return room;
   }
 
   const app = express();
@@ -103,21 +115,39 @@ async function main() {
   app.use(express.json());
 
   app.get("/api/fixtures", (_req, res) => {
-    const list = [...rooms.values()].map((room) => {
-      const theme = room.getFixtureTheme();
-      const known = getKnownFixture(room.fixtureId);
-      return {
-        ...theme,
-        label: known?.label ?? `Fixture ${room.fixtureId}`,
-        isLive: FEED_MODE === "live",
-      };
-    });
-    res.json(list);
+    if (FEED_MODE === "live") {
+      const list = [...rooms.values()].map((room) => {
+        const theme = room.getFixtureTheme();
+        const known = getKnownFixture(room.fixtureId);
+        return { ...theme, label: known?.label ?? `Fixture ${room.fixtureId}`, isLive: true };
+      });
+      res.json(list);
+    } else {
+      const list = replayFixtures.map((f) => {
+        const known = getKnownFixture(f.fixtureId);
+        return {
+          fixtureId: f.fixtureId,
+          participant1: getTeamTheme(known?.home),
+          participant2: getTeamTheme(known?.away),
+          label: known?.label ?? f.label,
+          isLive: false,
+        };
+      });
+      res.json(list);
+    }
   });
 
   app.get("/api/stream", (req, res) => {
     const fixtureId = typeof req.query.fixtureId === "string" ? req.query.fixtureId : undefined;
-    const room = getRoom(rooms, fixtureId) ?? rooms.values().next().value;
+
+    let room: GameRoom | null | undefined;
+    if (FEED_MODE === "live") {
+      room = getRoom(rooms, fixtureId) ?? rooms.values().next().value;
+    } else {
+      // Replay mode: spin up a fresh room per connection so every user
+      // starts from kickoff instead of joining mid-match.
+      room = fixtureId ? createReplayRoom(fixtureId) : createReplayRoom(replayFixtures[0]?.fixtureId);
+    }
     if (!room) {
       res.status(404).json({ error: "No active rooms." });
       return;
@@ -132,9 +162,19 @@ async function main() {
 
     const existingPlayerId = typeof req.query.playerId === "string" ? req.query.playerId : undefined;
     const playerId = room.addConnection(res, existingPlayerId);
+    playerRooms.set(playerId, room);
 
-    req.on("close", () => room.removeConnection(playerId));
+    req.on("close", () => {
+      room!.removeConnection(playerId);
+      room!.stop();
+      playerRooms.delete(playerId);
+    });
   });
+
+  function findRoom(fixtureId?: string, playerId?: string): GameRoom | undefined {
+    if (playerId && playerRooms.has(playerId)) return playerRooms.get(playerId)!;
+    return getRoom(rooms, fixtureId) ?? rooms.values().next().value ?? undefined;
+  }
 
   app.post("/api/guess", async (req, res) => {
     const body = req.body as Partial<GuessRequest & { fixtureId?: string }>;
@@ -142,7 +182,7 @@ async function main() {
       res.status(400).json({ ok: false, error: "playerId, roundId, and side are required." });
       return;
     }
-    const room = getRoom(rooms, body.fixtureId) ?? rooms.values().next().value;
+    const room = findRoom(body.fixtureId, body.playerId);
     if (!room) { res.status(404).json({ ok: false, error: "No active room." }); return; }
     const result = await room.submitGuess(body as GuessRequest);
     res.status(result.ok ? 200 : 409).json(result);
@@ -154,7 +194,7 @@ async function main() {
       res.status(400).json({ ok: false, error: "playerId, roundId, and side are required." });
       return;
     }
-    const room = getRoom(rooms, body.fixtureId) ?? rooms.values().next().value;
+    const room = findRoom(body.fixtureId, body.playerId);
     if (!room) { res.status(404).json({ ok: false, error: "No active room." }); return; }
     const result = await room.submitLullGuess(body as LullGuessRequest);
     res.status(result.ok ? 200 : 409).json(result);
@@ -162,7 +202,8 @@ async function main() {
 
   app.get("/api/leaderboard", async (req, res) => {
     const fixtureId = typeof req.query.fixtureId === "string" ? req.query.fixtureId : undefined;
-    const room = getRoom(rooms, fixtureId) ?? rooms.values().next().value;
+    const playerId = typeof req.query.playerId === "string" ? req.query.playerId : undefined;
+    const room = findRoom(fixtureId, playerId);
     if (!room) { res.status(404).json({ entries: [] }); return; }
     const entries = await room.getLeaderboard(20);
     res.json({ fixtureId: room.fixtureId, entries });
@@ -170,7 +211,7 @@ async function main() {
 
   app.get("/api/streak/:playerId", async (req, res) => {
     const fixtureId = typeof req.query.fixtureId === "string" ? req.query.fixtureId : undefined;
-    const room = getRoom(rooms, fixtureId) ?? rooms.values().next().value;
+    const room = findRoom(fixtureId, req.params.playerId);
     if (!room) { res.json({ current: 0, best: 0 }); return; }
     const streak = await room.getStreak(req.params.playerId);
     res.json(streak);
@@ -178,14 +219,15 @@ async function main() {
 
   app.get("/api/fixture", (req, res) => {
     const fixtureId = typeof req.query.fixtureId === "string" ? req.query.fixtureId : undefined;
-    const room = getRoom(rooms, fixtureId) ?? rooms.values().next().value;
+    const playerId = typeof req.query.playerId === "string" ? req.query.playerId : undefined;
+    const room = findRoom(fixtureId, playerId);
     if (!room) { res.status(404).json({ error: "No active room." }); return; }
     res.json(room.getFixtureTheme());
   });
 
   app.get("/api/share-data/:playerId", async (req, res) => {
     const fixtureId = typeof req.query.fixtureId === "string" ? req.query.fixtureId : undefined;
-    const room = getRoom(rooms, fixtureId) ?? rooms.values().next().value;
+    const room = findRoom(fixtureId, req.params.playerId);
     if (!room) { res.status(404).json({}); return; }
     res.json(await room.getShareData(req.params.playerId));
   });
