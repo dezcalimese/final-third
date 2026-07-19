@@ -226,6 +226,16 @@ export interface AvailableFixture extends FixtureTheme {
 /** Match phase derived from StatusId (§4 STATUS_ID table). */
 export type MatchPhase = "SCHEDULED" | "H1" | "HT" | "H2" | "FT" | "ET" | "PENS" | "UNKNOWN";
 
+export interface MatchStats {
+  possession: [number, number];
+  shots: [number, number];
+  shotsOnTarget: [number, number];
+  corners: [number, number];
+  yellowCards: [number, number];
+  redCards: [number, number];
+  fouls: [number, number];
+}
+
 /** Live score + clock, read off the running Score/Clock/StatusId fields on every message. */
 export interface MatchState {
   participant1Goals: number;
@@ -235,6 +245,7 @@ export interface MatchState {
   clockSeconds: number | null;
   clockRunning: boolean;
   clockUpdatedAtMs: number | null;
+  stats: MatchStats;
 }
 
 export type ServerEvent =

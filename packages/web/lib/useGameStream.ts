@@ -52,7 +52,7 @@ function tierFromAction(action: string): PossessionMoment["tier"] {
  * leaderboard/streak purposes (§5) — before that, identity is a server-issued id that
  * only lives for the current session (no browser storage, per §9).
  */
-export function useGameStream(walletIdentity?: string | null) {
+export function useGameStream(fixtureId: string, walletIdentity?: string | null) {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [fixture, setFixture] = useState<FixtureTheme | null>(null);
@@ -74,8 +74,12 @@ export function useGameStream(walletIdentity?: string | null) {
   const lullRoundRef = useRef<LullRoundView | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
+  const fixtureIdRef = useRef(fixtureId);
+  fixtureIdRef.current = fixtureId;
+
   const connect = useCallback(() => {
     const url = new URL("/api/stream", RELAY_URL);
+    url.searchParams.set("fixtureId", fixtureIdRef.current);
     if (playerIdRef.current) url.searchParams.set("playerId", playerIdRef.current);
 
     const es = new EventSource(url.toString());

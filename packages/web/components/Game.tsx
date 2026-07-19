@@ -12,10 +12,12 @@ import { WalletConnectButton } from "./WalletConnectButton";
 import { LeaderboardPanel } from "./LeaderboardPanel";
 import { MatchStatusBar } from "./MatchStatusBar";
 import { ShareCardModal } from "./ShareCardModal";
+import { MatchStatsPanel } from "./MatchStatsPanel";
+import Link from "next/link";
 
 const SoccerBallField = dynamic(() => import("./SoccerBallField").then((m) => m.SoccerBallField), { ssr: false });
 
-export function Game() {
+export function Game({ fixtureId, onBack }: { fixtureId: string; onBack: () => void }) {
   const { user } = usePrivy();
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -36,15 +38,13 @@ export function Game() {
     lullReveal,
     submitGuess,
     submitLullGuess,
-  } = useGameStream(user?.wallet?.address ?? null);
+  } = useGameStream(fixtureId, user?.wallet?.address ?? null);
 
   const escalationTint =
     round?.status === "locked" && fixture
       ? (round.attacker === 2 ? fixture.participant2 : fixture.participant1).primary
       : null;
 
-  // Danger/high-danger possession nudges the ambient ball drift a little faster —
-  // a texture-only cue, never anything shake-like (accessibility decision, §6).
   const ballSpeed = round?.status === "locked" ? 1.6 : possession?.tier === "high_danger" ? 1.35 : 1;
 
   return (
@@ -64,7 +64,12 @@ export function Game() {
         transition={{ duration: 1.1 }}
       >
         <header className="flex items-center justify-between px-5 pt-5">
-          <span className="text-xs font-semibold uppercase tracking-widest text-white/50">Final Third</span>
+          <button
+            onClick={onBack}
+            className="text-xs font-semibold uppercase tracking-widest text-white/50 hover:text-white/80"
+          >
+            &larr; Matches
+          </button>
           <WalletConnectButton />
         </header>
 
@@ -87,6 +92,7 @@ export function Game() {
             />
           </section>
 
+          <MatchStatsPanel stats={matchState.stats} fixture={fixture} />
           <PossessionBar fixture={fixture} possession={possession} />
         </div>
 
@@ -105,6 +111,12 @@ export function Game() {
             >
               Leaderboard
             </button>
+            <Link
+              href="/docs"
+              className="rounded-full bg-white/5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-white/70"
+            >
+              Docs
+            </Link>
             <span className="text-[10px] uppercase tracking-widest text-white/30">
               {status === "open" ? "Live" : status === "reconnecting" ? "Reconnecting…" : "Connecting…"}
             </span>

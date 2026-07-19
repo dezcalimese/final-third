@@ -12,6 +12,7 @@ export function WalletContextProvider({ children }: { children: React.ReactNode 
         appearance: {
           theme: "dark",
           accentColor: "#2563eb",
+          walletList: ["phantom", "rabby_wallet", "metamask", "detected_wallets"],
         },
         loginMethods: ["wallet"],
         embeddedWallets: {

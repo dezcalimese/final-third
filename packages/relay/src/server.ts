@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
 import { Redis } from "ioredis";
-import type { GuessRequest, LullGuessRequest } from "@final-third/shared";
+import { getKnownFixture, type GuessRequest, type LullGuessRequest } from "@final-third/shared";
 import { ReplaySource } from "./feed/ReplaySource.js";
 import { LiveSource } from "./feed/LiveSource.js";
 import { TxLineAuth } from "./txlineAuth.js";
@@ -20,40 +20,24 @@ const DATA_DIR = path.resolve(__dirname, "../../../data/raw");
 
 const PORT = Number(process.env.PORT ?? 4000);
 const FEED_MODE = process.env.FEED_MODE ?? "replay";
-const REPLAY_FIXTURE_ID = process.env.REPLAY_FIXTURE_ID ?? "18237038";
-const REPLAY_SPEED = Number(process.env.REPLAY_SPEED ?? 20);
+const REPLAY_SPEED = Number(process.env.REPLAY_SPEED ?? 5);
 const REPLAY_START_OFFSET_MS = Number(process.env.REPLAY_START_OFFSET_MS ?? 0);
 const LIVE_FIXTURE_ID = process.env.LIVE_FIXTURE_ID;
 
-function resolveReplayFile(fixtureId: string): string {
-  const real = path.join(DATA_DIR, `${fixtureId}.jsonl`);
-  if (fs.existsSync(real)) return real;
-  const synthetic = path.join(DATA_DIR, `synthetic-${fixtureId}.jsonl`);
-  if (fs.existsSync(synthetic)) return synthetic;
-  throw new Error(
-    `No fixture data found for ${fixtureId}. Run \`npm run fetch:historical\` (needs TXLINE_API_TOKEN) ` +
-      `or \`npm run gen:synthetic\` to generate one first.`
-  );
-}
-
-function buildFeedSource(): { feed: FeedSource; fixtureId: string } {
-  if (FEED_MODE === "live") {
-    const apiToken = process.env.TXLINE_API_TOKEN;
-    if (!apiToken) throw new Error("FEED_MODE=live requires TXLINE_API_TOKEN to be set.");
-    if (!LIVE_FIXTURE_ID) throw new Error("FEED_MODE=live requires LIVE_FIXTURE_ID to be set.");
-    const baseUrl = process.env.TXLINE_BASE_URL ?? "https://txline-dev.txodds.com";
-    const auth = new TxLineAuth(baseUrl, apiToken);
-    return { feed: new LiveSource({ auth, baseUrl, fixtureId: LIVE_FIXTURE_ID }), fixtureId: LIVE_FIXTURE_ID };
-  }
-
-  const filePath = resolveReplayFile(REPLAY_FIXTURE_ID);
-  const fixtureId = path.basename(filePath).startsWith("synthetic-")
-    ? `synthetic-${REPLAY_FIXTURE_ID}`
-    : REPLAY_FIXTURE_ID;
-  return {
-    feed: new ReplaySource({ filePath, speed: REPLAY_SPEED, loop: true, startOffsetMs: REPLAY_START_OFFSET_MS }),
-    fixtureId,
-  };
+function discoverReplayFixtures(): { fixtureId: string; filePath: string; label: string }[] {
+  if (!fs.existsSync(DATA_DIR)) return [];
+  return fs
+    .readdirSync(DATA_DIR)
+    .filter((f) => f.endsWith(".jsonl") && !f.startsWith("synthetic-"))
+    .map((f) => {
+      const fixtureId = f.replace(".jsonl", "");
+      const known = getKnownFixture(fixtureId);
+      return {
+        fixtureId,
+        filePath: path.join(DATA_DIR, f),
+        label: known?.label ?? `Fixture ${fixtureId}`,
+      };
+    });
 }
 
 function buildLeaderboardStore(): LeaderboardStore {
@@ -65,7 +49,7 @@ function buildLeaderboardStore(): LeaderboardStore {
   const redis = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 2 });
   let loggedFailure = false;
   redis.on("error", (err: Error) => {
-    if (loggedFailure) return; // ioredis retries internally; avoid spamming the console.
+    if (loggedFailure) return;
     loggedFailure = true;
     console.error("Redis connection failed, falling back to in-memory leaderboard:", err.message);
   });
@@ -73,21 +57,72 @@ function buildLeaderboardStore(): LeaderboardStore {
   return new RedisLeaderboardStore(redis);
 }
 
-async function main() {
-  const { feed, fixtureId } = buildFeedSource();
-  const leaderboard = buildLeaderboardStore();
-  const room = new GameRoom(fixtureId, feed, leaderboard);
-  room.start();
+function getRoom(rooms: Map<string, GameRoom>, fixtureId: string | undefined): GameRoom | null {
+  if (!fixtureId) return null;
+  return rooms.get(fixtureId) ?? null;
+}
 
-  console.log(
-    `Final Third relay starting: mode=${FEED_MODE} fixtureId=${fixtureId} speed=${FEED_MODE === "replay" ? REPLAY_SPEED : "n/a"}`
-  );
+async function main() {
+  const leaderboard = buildLeaderboardStore();
+  const rooms = new Map<string, GameRoom>();
+
+  if (FEED_MODE === "live") {
+    const apiToken = process.env.TXLINE_API_TOKEN;
+    if (!apiToken) throw new Error("FEED_MODE=live requires TXLINE_API_TOKEN to be set.");
+    if (!LIVE_FIXTURE_ID) throw new Error("FEED_MODE=live requires LIVE_FIXTURE_ID to be set.");
+    const baseUrl = process.env.TXLINE_BASE_URL ?? "https://txline-dev.txodds.com";
+    const auth = new TxLineAuth(baseUrl, apiToken);
+    const feed: FeedSource = new LiveSource({ auth, baseUrl, fixtureId: LIVE_FIXTURE_ID });
+    const room = new GameRoom(LIVE_FIXTURE_ID, feed, leaderboard);
+    room.start();
+    rooms.set(LIVE_FIXTURE_ID, room);
+    console.log(`Live room started: ${LIVE_FIXTURE_ID}`);
+  } else {
+    const fixtures = discoverReplayFixtures();
+    if (fixtures.length === 0) {
+      throw new Error(
+        `No fixture data in ${DATA_DIR}. Run \`npm run fetch:historical\` or \`npm run gen:synthetic\`.`
+      );
+    }
+    for (const f of fixtures) {
+      const feed = new ReplaySource({
+        filePath: f.filePath,
+        speed: REPLAY_SPEED,
+        loop: true,
+        startOffsetMs: REPLAY_START_OFFSET_MS,
+      });
+      const room = new GameRoom(f.fixtureId, feed, leaderboard);
+      room.start();
+      rooms.set(f.fixtureId, room);
+      console.log(`Replay room started: ${f.fixtureId} (${f.label}) speed=${REPLAY_SPEED}x`);
+    }
+  }
 
   const app = express();
   app.use(cors());
   app.use(express.json());
 
+  app.get("/api/fixtures", (_req, res) => {
+    const list = [...rooms.values()].map((room) => {
+      const theme = room.getFixtureTheme();
+      const known = getKnownFixture(room.fixtureId);
+      return {
+        ...theme,
+        label: known?.label ?? `Fixture ${room.fixtureId}`,
+        isLive: FEED_MODE === "live",
+      };
+    });
+    res.json(list);
+  });
+
   app.get("/api/stream", (req, res) => {
+    const fixtureId = typeof req.query.fixtureId === "string" ? req.query.fixtureId : undefined;
+    const room = getRoom(rooms, fixtureId) ?? rooms.values().next().value;
+    if (!room) {
+      res.status(404).json({ error: "No active rooms." });
+      return;
+    }
+
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -102,51 +137,69 @@ async function main() {
   });
 
   app.post("/api/guess", async (req, res) => {
-    const body = req.body as Partial<GuessRequest>;
+    const body = req.body as Partial<GuessRequest & { fixtureId?: string }>;
     if (!body.playerId || !body.roundId || !body.side) {
       res.status(400).json({ ok: false, error: "playerId, roundId, and side are required." });
       return;
     }
+    const room = getRoom(rooms, body.fixtureId) ?? rooms.values().next().value;
+    if (!room) { res.status(404).json({ ok: false, error: "No active room." }); return; }
     const result = await room.submitGuess(body as GuessRequest);
     res.status(result.ok ? 200 : 409).json(result);
   });
 
   app.post("/api/lull-guess", async (req, res) => {
-    const body = req.body as Partial<LullGuessRequest>;
+    const body = req.body as Partial<LullGuessRequest & { fixtureId?: string }>;
     if (!body.playerId || !body.roundId || !body.side) {
       res.status(400).json({ ok: false, error: "playerId, roundId, and side are required." });
       return;
     }
+    const room = getRoom(rooms, body.fixtureId) ?? rooms.values().next().value;
+    if (!room) { res.status(404).json({ ok: false, error: "No active room." }); return; }
     const result = await room.submitLullGuess(body as LullGuessRequest);
     res.status(result.ok ? 200 : 409).json(result);
   });
 
-  app.get("/api/leaderboard", async (_req, res) => {
+  app.get("/api/leaderboard", async (req, res) => {
+    const fixtureId = typeof req.query.fixtureId === "string" ? req.query.fixtureId : undefined;
+    const room = getRoom(rooms, fixtureId) ?? rooms.values().next().value;
+    if (!room) { res.status(404).json({ entries: [] }); return; }
     const entries = await room.getLeaderboard(20);
     res.json({ fixtureId: room.fixtureId, entries });
   });
 
   app.get("/api/streak/:playerId", async (req, res) => {
+    const fixtureId = typeof req.query.fixtureId === "string" ? req.query.fixtureId : undefined;
+    const room = getRoom(rooms, fixtureId) ?? rooms.values().next().value;
+    if (!room) { res.json({ current: 0, best: 0 }); return; }
     const streak = await room.getStreak(req.params.playerId);
     res.json(streak);
   });
 
-  app.get("/api/fixture", (_req, res) => {
+  app.get("/api/fixture", (req, res) => {
+    const fixtureId = typeof req.query.fixtureId === "string" ? req.query.fixtureId : undefined;
+    const room = getRoom(rooms, fixtureId) ?? rooms.values().next().value;
+    if (!room) { res.status(404).json({ error: "No active room." }); return; }
     res.json(room.getFixtureTheme());
   });
 
   app.get("/api/share-data/:playerId", async (req, res) => {
+    const fixtureId = typeof req.query.fixtureId === "string" ? req.query.fixtureId : undefined;
+    const room = getRoom(rooms, fixtureId) ?? rooms.values().next().value;
+    if (!room) { res.status(404).json({}); return; }
     res.json(await room.getShareData(req.params.playerId));
   });
 
-  app.get("/health", (_req, res) => res.json({ ok: true, fixtureId: room.fixtureId, mode: FEED_MODE }));
+  app.get("/health", (_req, res) => {
+    res.json({ ok: true, rooms: [...rooms.keys()], mode: FEED_MODE });
+  });
 
   app.listen(PORT, () => {
-    console.log(`Final Third relay listening on :${PORT}`);
+    console.log(`Final Third relay listening on :${PORT} (${rooms.size} room${rooms.size === 1 ? "" : "s"})`);
   });
 
   process.on("SIGINT", () => {
-    room.stop();
+    for (const room of rooms.values()) room.stop();
     process.exit(0);
   });
 }

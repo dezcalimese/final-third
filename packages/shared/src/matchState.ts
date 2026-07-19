@@ -1,4 +1,4 @@
-import { STATUS_ID, type MatchPhase, type MatchState, type ScoreMessage } from "./types.js";
+import { STATUS_ID, type MatchPhase, type MatchState, type MatchStats, type ScoreMessage } from "./types.js";
 
 function statusIdToPhase(statusId: number | undefined): MatchPhase {
   switch (statusId) {
@@ -44,6 +44,15 @@ export function readMatchState(msg: ScoreMessage, prev: MatchState): MatchState 
   const p1Goals = msg.Score?.Participant1?.Total?.Goals;
   const p2Goals = msg.Score?.Participant2?.Total?.Goals;
 
+  const stats = { ...prev.stats };
+  const p1Total = msg.Score?.Participant1?.Total;
+  const p2Total = msg.Score?.Participant2?.Total;
+  if (p1Total || p2Total) {
+    stats.corners = [p1Total?.Corners ?? stats.corners[0], p2Total?.Corners ?? stats.corners[1]];
+    stats.yellowCards = [p1Total?.YellowCards ?? stats.yellowCards[0], p2Total?.YellowCards ?? stats.yellowCards[1]];
+    stats.redCards = [p1Total?.RedCards ?? stats.redCards[0], p2Total?.RedCards ?? stats.redCards[1]];
+  }
+
   return {
     participant1Goals: p1Goals ?? prev.participant1Goals,
     participant2Goals: p2Goals ?? prev.participant2Goals,
@@ -52,8 +61,19 @@ export function readMatchState(msg: ScoreMessage, prev: MatchState): MatchState 
     clockSeconds: msg.Clock ? msg.Clock.Seconds : prev.clockSeconds,
     clockRunning: msg.Clock ? msg.Clock.Running : prev.clockRunning,
     clockUpdatedAtMs: msg.Clock ? Date.now() : prev.clockUpdatedAtMs,
+    stats,
   };
 }
+
+export const EMPTY_MATCH_STATS: MatchStats = {
+  possession: [50, 50],
+  shots: [0, 0],
+  shotsOnTarget: [0, 0],
+  corners: [0, 0],
+  yellowCards: [0, 0],
+  redCards: [0, 0],
+  fouls: [0, 0],
+};
 
 export const EMPTY_MATCH_STATE: MatchState = {
   participant1Goals: 0,
@@ -63,4 +83,5 @@ export const EMPTY_MATCH_STATE: MatchState = {
   clockSeconds: null,
   clockRunning: false,
   clockUpdatedAtMs: null,
+  stats: { ...EMPTY_MATCH_STATS },
 };

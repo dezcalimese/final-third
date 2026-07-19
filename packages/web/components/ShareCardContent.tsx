@@ -9,8 +9,16 @@ export interface ShareCardData {
   beatPercent: number; // 0-100, "beat X% of players"
 }
 
+const SUBDIVISION_FLAGS: Record<string, string> = {
+  "gb-eng": "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}",
+  "gb-sct": "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}",
+  "gb-wls": "\u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}",
+};
+
 function isoToFlagEmoji(iso: string): string {
-  return [...iso.toUpperCase()].map((c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65)).join("");
+  if (SUBDIVISION_FLAGS[iso]) return SUBDIVISION_FLAGS[iso];
+  const code = iso.slice(0, 2).toUpperCase();
+  return [...code].map((c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65)).join("");
 }
 
 export function ShareCardContent({ home, away, streak, best, accuracy, beatPercent }: ShareCardData) {

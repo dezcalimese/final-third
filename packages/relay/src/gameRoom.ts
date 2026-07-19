@@ -10,6 +10,7 @@ import {
   type LullGuessRequest,
   type LullRoundView,
   type MatchState,
+  type MatchStats,
   type PlayerGuess,
   type Round,
   type RoundView,
@@ -46,6 +47,10 @@ export class GameRoom {
   private lullRound: LullRoundView | null = null;
   private readonly lullGuesses = new Map<string, LullGuessRequest>();
   private lullRoundCounter = 0;
+  private possessionCount: [number, number] = [0, 0];
+  private shotCount: [number, number] = [0, 0];
+  private shotOnTargetCount: [number, number] = [0, 0];
+  private foulCount: [number, number] = [0, 0];
 
   constructor(
     public readonly fixtureId: string,
@@ -230,12 +235,41 @@ export class GameRoom {
 
   private updateMatchState(msg: ScoreMessage): void {
     const next = readMatchState(msg, this.matchState);
-    const changed =
-      next.participant1Goals !== this.matchState.participant1Goals ||
-      next.participant2Goals !== this.matchState.participant2Goals ||
-      next.clock !== this.matchState.clock ||
-      next.phase !== this.matchState.phase;
-    if (!changed) return;
+
+    const participant = (msg as Record<string, unknown>).Participant as number | undefined;
+    const action = msg.Action;
+    const data = (msg as Record<string, unknown>).Data as Record<string, unknown> | undefined;
+
+    if (participant === 1 || participant === 2) {
+      const idx = participant === 1 ? 0 : 1;
+      if (action.includes("possession")) {
+        this.possessionCount[idx]++;
+      }
+      if (action === "shot" && data?.Outcome) {
+        this.shotCount[idx]++;
+        const outcome = data.Outcome as string;
+        if (outcome === "OnTarget" || outcome === "Scored") {
+          this.shotOnTargetCount[idx]++;
+        }
+      }
+      if (action === "free_kick" && data?.FreeKickType !== "Offside") {
+        this.foulCount[idx === 0 ? 1 : 0]++;
+      }
+    }
+
+    const totalPoss = this.possessionCount[0] + this.possessionCount[1];
+    const possession: [number, number] = totalPoss > 0
+      ? [Math.round((this.possessionCount[0] / totalPoss) * 100), Math.round((this.possessionCount[1] / totalPoss) * 100)]
+      : [50, 50];
+
+    next.stats = {
+      ...next.stats,
+      possession,
+      shots: [...this.shotCount] as [number, number],
+      shotsOnTarget: [...this.shotOnTargetCount] as [number, number],
+      fouls: [...this.foulCount] as [number, number],
+    };
+
     this.matchState = next;
     this.broadcast({ type: "match_state", state: next });
   }
