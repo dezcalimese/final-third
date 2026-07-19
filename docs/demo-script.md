@@ -52,7 +52,7 @@ point is proving the live path is real, not simulated.
 ## 4:30–5:00 — Close
 
 Quick montage: wallet connect, leaderboard panel, half-time market-call round (the
-lull fallback). Final card: "Free. No stakes. Every call graded against the verified
+lull fallback). Final card: "Free to play. Every call graded against the verified
 TxLINE feed." End on the deployed URL.
 
 ## Shot list checklist

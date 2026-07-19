@@ -83,7 +83,7 @@ export function ShareCardContent({ home, away, streak, best, accuracy, beatPerce
           letterSpacing: 1,
         }}
       >
-        Every call graded against the verified TxLINE feed · a free, no-stakes game
+        Every call graded against the verified TxLINE feed · free to play
       </div>
     </div>
   );

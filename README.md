@@ -1,10 +1,10 @@
 # Final Third
 
-A free, no-stakes live prediction game for World Cup matches, built for the TxODDS
+A live prediction game for World Cup matches, built for the TxODDS
 World Cup Hackathon (Track 2: Consumer & Fan Experiences).
 
-**No money, no wagering, ever.** This is a companion game for watching live soccer —
-not a betting product.
+**No wagering in this build.** This is a companion game for watching live soccer —
+the current version is free to play with no stakes.
 
 ## The pitch
 
@@ -147,6 +147,6 @@ the web app picks up shared-package changes.
 
 ## No wagering
 
-This is a free, no-stakes game. No money changes hands, no wallet ever signs a
-transaction — the Solana wallet connection exists purely to give players a persistent
-identity for the leaderboard.
+The current version is free to play with no stakes. No money changes hands and no
+wallet signs a transaction — the Solana wallet connection exists purely to give
+players a persistent identity for the leaderboard.

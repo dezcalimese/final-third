@@ -60,7 +60,7 @@ export const OutroScene = () => {
           }}
         >
           {[
-            { label: "No stakes", value: "Free forever" },
+            { label: "No stakes", value: "Free to play" },
             { label: "Identity", value: "Privy wallet" },
             { label: "Data", value: "TxLINE verified" },
           ].map((item) => (

@@ -61,7 +61,7 @@ export const SolutionScene = () => {
             transform: `translateY(${interpolate(taglineIn, [0, 1], [20, 0])}px)`,
           }}
         >
-          A free, no-stakes World Cup prediction game
+          A live World Cup prediction game
         </div>
 
         <div

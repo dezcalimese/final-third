@@ -58,8 +58,8 @@ export default function DocsPage() {
             &ldquo;market call&rdquo; round (higher/lower on a live odds market) keeps the screen alive.
           </p>
           <p>
-            No money, no wagering, ever. The Solana wallet connection exists purely for persistent
-            leaderboard identity &mdash; no transactions are ever signed.
+            The current version is free to play with no stakes. The Solana wallet connection
+            exists purely for persistent leaderboard identity &mdash; no transactions are signed.
           </p>
         </Section>
 
@@ -115,12 +115,12 @@ export default function DocsPage() {
             <div className="rounded-xl bg-white/5 p-5">
               <h3 className="mb-2 text-base font-bold text-white/90">Primary: B2B white-label</h3>
               <p>
-                White-label to sportsbook and media operators as a no-stakes engagement and acquisition
-                product. TxODDS&rsquo;s customers are exactly the operators who want a free, compliant,
-                zero-regulatory-friction way to keep users engaged during a match without every product
-                surface being a bet slip. The core loop &mdash; collapse a live feed into a short,
-                gradeable prediction &mdash; is generic to any sport with structured possession/pressure
-                events and a natural top-of-funnel for real-money products.
+                White-label to sportsbook and media operators as an engagement and acquisition
+                product. TxODDS&rsquo;s customers are exactly the operators who want a compliant,
+                low-friction way to keep users engaged during a match. The core loop &mdash; collapse
+                a live feed into a short, gradeable prediction &mdash; is generic to any sport with
+                structured possession/pressure events. The free-to-play version serves as a natural
+                top-of-funnel, with the option to layer in stakes for operators who want it.
               </p>
             </div>
             <div className="rounded-xl bg-white/5 p-5">
