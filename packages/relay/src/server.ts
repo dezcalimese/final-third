@@ -20,7 +20,7 @@ const DATA_DIR = path.resolve(__dirname, "../../../data/raw");
 
 const PORT = Number(process.env.PORT ?? 4000);
 const FEED_MODE = process.env.FEED_MODE ?? "replay";
-const REPLAY_SPEED = Number(process.env.REPLAY_SPEED ?? 5);
+const REPLAY_SPEED = Number(process.env.REPLAY_SPEED ?? 3);
 const REPLAY_START_OFFSET_MS = Number(process.env.REPLAY_START_OFFSET_MS ?? 0);
 const LIVE_FIXTURE_ID = process.env.LIVE_FIXTURE_ID;
 

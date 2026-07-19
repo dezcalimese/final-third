@@ -252,7 +252,7 @@ export class GameRoom {
           this.shotOnTargetCount[idx]++;
         }
       }
-      if (action === "free_kick" && data?.FreeKickType !== "Offside") {
+      if (action === "free_kick" && msg.Confirmed && data?.FreeKickType !== "Offside") {
         this.foulCount[idx === 0 ? 1 : 0]++;
       }
     }
