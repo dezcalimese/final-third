@@ -20,7 +20,10 @@ const DATA_DIR = path.resolve(__dirname, "../../../data/raw");
 
 const PORT = Number(process.env.PORT ?? 4000);
 const FEED_MODE = process.env.FEED_MODE ?? "replay";
-const REPLAY_SPEED = Number(process.env.REPLAY_SPEED ?? 2);
+// Replay at the fixture's natural pace by default. Prediction deadlines use the
+// same fixture-time clock as feed events, so accelerating the feed also shrinks
+// the player's real-world response window (e.g. 4s becomes 2s at 2x).
+const REPLAY_SPEED = Number(process.env.REPLAY_SPEED ?? 1);
 const REPLAY_START_OFFSET_MS = Number(process.env.REPLAY_START_OFFSET_MS ?? 0);
 const LIVE_FIXTURE_ID = process.env.LIVE_FIXTURE_ID;
 
@@ -71,8 +74,9 @@ async function main() {
   // right room. For live mode, one shared room is used instead.
   const playerRooms = new Map<string, GameRoom>();
 
-  // Fixture metadata (discovered once at startup for the /api/fixtures listing)
-  const replayFixtures = FEED_MODE === "live" ? [] : discoverReplayFixtures();
+  // Fixture metadata (discovered once at startup for the /api/fixtures listing).
+  // Replay fixtures remain available alongside a live room.
+  const replayFixtures = discoverReplayFixtures();
 
   if (FEED_MODE === "live") {
     const apiToken = process.env.TXLINE_API_TOKEN;
@@ -85,15 +89,14 @@ async function main() {
     room.start();
     rooms.set(LIVE_FIXTURE_ID, room);
     console.log(`Live room started: ${LIVE_FIXTURE_ID}`);
-  } else {
-    if (replayFixtures.length === 0) {
+  } else if (replayFixtures.length === 0) {
       throw new Error(
         `No fixture data in ${DATA_DIR}. Run \`npm run fetch:historical\` or \`npm run gen:synthetic\`.`
       );
-    }
-    for (const f of replayFixtures) {
-      console.log(`Replay fixture available: ${f.fixtureId} (${f.label}) speed=${REPLAY_SPEED}x`);
-    }
+  }
+
+  for (const f of replayFixtures) {
+    console.log(`Replay fixture available: ${f.fixtureId} (${f.label}) speed=${REPLAY_SPEED}x`);
   }
 
   function createReplayRoom(fixtureId: string): GameRoom | null {
@@ -115,15 +118,14 @@ async function main() {
   app.use(express.json());
 
   app.get("/api/fixtures", (_req, res) => {
-    if (FEED_MODE === "live") {
-      const list = [...rooms.values()].map((room) => {
+    const liveFixtures = [...rooms.values()].map((room) => {
         const theme = room.getFixtureTheme();
         const known = getKnownFixture(room.fixtureId);
         return { ...theme, label: known?.label ?? `Fixture ${room.fixtureId}`, isLive: true };
       });
-      res.json(list);
-    } else {
-      const list = replayFixtures.map((f) => {
+    const replayOptions = replayFixtures
+      .filter((f) => !rooms.has(f.fixtureId))
+      .map((f) => {
         const known = getKnownFixture(f.fixtureId);
         return {
           fixtureId: f.fixtureId,
@@ -133,21 +135,18 @@ async function main() {
           isLive: false,
         };
       });
-      res.json(list);
-    }
+    res.json([...liveFixtures, ...replayOptions]);
   });
 
   app.get("/api/stream", (req, res) => {
     const fixtureId = typeof req.query.fixtureId === "string" ? req.query.fixtureId : undefined;
 
-    let room: GameRoom | null | undefined;
-    if (FEED_MODE === "live") {
-      room = getRoom(rooms, fixtureId) ?? rooms.values().next().value;
-    } else {
-      // Replay mode: spin up a fresh room per connection so every user
-      // starts from kickoff instead of joining mid-match.
-      room = fixtureId ? createReplayRoom(fixtureId) : createReplayRoom(replayFixtures[0]?.fixtureId);
-    }
+    // Live fixtures use their persistent shared room. Replay fixtures get a fresh
+    // per-connection room so every player starts from kickoff.
+    const liveRoom = getRoom(rooms, fixtureId);
+    const room = liveRoom
+      ?? (fixtureId ? createReplayRoom(fixtureId) : rooms.values().next().value)
+      ?? createReplayRoom(replayFixtures[0]?.fixtureId);
     if (!room) {
       res.status(404).json({ error: "No active rooms." });
       return;
@@ -166,7 +165,7 @@ async function main() {
 
     req.on("close", () => {
       room!.removeConnection(playerId);
-      room!.stop();
+      if (!liveRoom) room!.stop();
       playerRooms.delete(playerId);
     });
   });

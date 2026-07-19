@@ -7,7 +7,7 @@ export interface LiveSourceOptions {
   baseUrl: string;
   /**
    * /api/scores/stream is a single global feed across every fixture currently live
-   * on the devnet, not scoped to one match (confirmed: every message carries its own
+   * on the selected network, not scoped to one match (confirmed: every message carries its own
    * `FixtureId`). Only messages matching this fixture are passed to onMessage —
    * everything else is silently dropped so the round engine never sees another
    * match's events mixed in.
@@ -63,6 +63,7 @@ export class LiveSource implements FeedSource {
           Authorization: `Bearer ${jwt}`,
           "X-Api-Token": this.opts.auth.getApiToken(),
           Accept: "text/event-stream",
+          "Cache-Control": "no-cache",
         },
         signal: this.controller.signal,
       });
@@ -91,27 +92,30 @@ export class LiveSource implements FeedSource {
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
 
-        let boundary: number;
-        while ((boundary = buffer.indexOf("\n\n")) !== -1) {
-          const block = buffer.slice(0, boundary);
-          buffer = buffer.slice(boundary + 2);
+        let separator = buffer.match(/\r?\n\r?\n/);
+        while (separator?.index !== undefined) {
+          const block = buffer.slice(0, separator.index);
+          buffer = buffer.slice(separator.index + separator[0].length);
           const dataLines = block
-            .split("\n")
+            .split(/\r?\n/)
             .filter((l) => l.startsWith("data:"))
             .map((l) => l.slice(5).trimStart());
-          if (dataLines.length === 0) continue;
-          try {
-            const msg = JSON.parse(dataLines.join("\n")) as ScoreMessage;
-            // The stream also carries bare keepalive pings ({"Ts": <seconds>}, no
-            // Action/FixtureId) and every other currently-live fixture's events —
-            // only log+forward the ones for our match.
-            if (String(msg.FixtureId) !== this.opts.fixtureId) continue;
-            matchedSeen++;
-            console.log(`[live ${this.opts.fixtureId}] #${matchedSeen} ${msg.Action} Ts=${msg.Ts} Participant=${msg.Participant ?? "-"}`);
-            onMessage(msg);
-          } catch {
-            // Skip malformed/heartbeat blocks.
+          if (dataLines.length > 0) {
+            try {
+              const msg = JSON.parse(dataLines.join("\n")) as ScoreMessage;
+              // The stream also carries bare keepalive pings ({"Ts": <seconds>}, no
+              // Action/FixtureId) and every other currently-live fixture's events —
+              // only log+forward the ones for our match.
+              if (String(msg.FixtureId) === this.opts.fixtureId) {
+                matchedSeen++;
+                console.log(`[live ${this.opts.fixtureId}] #${matchedSeen} ${msg.Action} Ts=${msg.Ts} Participant=${msg.Participant ?? "-"}`);
+                onMessage(msg);
+              }
+            } catch {
+              // Skip malformed/heartbeat blocks.
+            }
           }
+          separator = buffer.match(/\r?\n\r?\n/);
         }
       }
 
