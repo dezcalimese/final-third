@@ -12,10 +12,8 @@ export interface KnownFixture {
  * for theming, and its home/away columns line up with the real `Participant1IsHome`
  * value observed for the two fixtures that have real data.
  *
- * Real data imported (`data/raw/{id}.jsonl`, via `npm run import:fixture`): 18237038,
- * 18241006. 18257739 and 18257865 are listed for completeness/labeling but have no
- * pulled data in this build — `npm run fetch:historical` with a real
- * TXLINE_API_TOKEN would fetch them.
+ * Real replay data imported (`data/raw/{id}.jsonl`): 18237038, 18241006, and
+ * 18257865. Fixture 18257739 is consumed from the live stream while available.
  */
 export const KNOWN_FIXTURES: KnownFixture[] = [
   { fixtureId: "18237038", home: "France", away: "Spain", label: "France v Spain (Semi-final)" },

@@ -1,7 +1,7 @@
 import axios, { type AxiosInstance } from "axios";
 
 /**
- * Guest JWT + API token auth against the TxLINE devnet (§4).
+ * Guest JWT + API token auth against the configured TxLINE network (§4).
  * The API token never leaves this process; the browser never talks to TxLINE directly.
  */
 export class TxLineAuth {
@@ -15,9 +15,7 @@ export class TxLineAuth {
   }
 
   private async fetchGuestJwt(): Promise<string> {
-    const res = await axios.post(`${this.baseUrl}/auth/guest/start`, undefined, {
-      headers: { "X-Api-Token": this.apiToken },
-    });
+    const res = await axios.post(`${this.baseUrl}/auth/guest/start`);
     const token = res.data?.token;
     if (!token) throw new Error("Guest JWT response missing `token` field");
     return token as string;

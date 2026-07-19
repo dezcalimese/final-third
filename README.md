@@ -84,23 +84,30 @@ npm run dev:web             # starts the Next.js app on :3000, in a second termi
 ```
 
 Open http://localhost:3000. `packages/relay/.env` (copy from `.env.example`) controls
-`REPLAY_FIXTURE_ID` and `REPLAY_SPEED`. The default is `REPLAY_SPEED=2` (a 90-minute
-match plays in ~45 minutes). The 4-second lock window scales with speed — at 2x you
-get ~2 seconds to pick. Each user gets a fresh replay from kickoff when they click a
-match. Use `REPLAY_SPEED=1` for real-time pacing, or higher values for quick
-iteration on the engine.
+`REPLAY_FIXTURE_ID` and `REPLAY_SPEED`. The default is `REPLAY_SPEED=1`, so match
+events and the 4-second lock window play at their natural pace. Each user gets a
+fresh replay from kickoff when they click a match. Higher values are useful for
+quick engine iteration, but they also compress the player's response window (for
+example, 2x turns four seconds into two).
 
 ### Live mode
 
-Set `TXLINE_API_TOKEN` in `packages/relay/.env`, then `FEED_MODE=live npm run dev:relay`.
-Requires a fixture currently live on the devnet. The relay auto-refreshes its guest
-JWT on 401 and reconnects the SSE stream with exponential backoff on drop.
+Set `TXLINE_API_TOKEN`, `TXLINE_BASE_URL`, and `LIVE_FIXTURE_ID` in
+`packages/relay/.env`, then run `npm run dev:relay`. For the Spain–Argentina final,
+use fixture `18257739`. Set `TXLINE_BASE_URL` to the same network where the API token
+was activated (`https://txline-dev.txodds.com` for devnet or
+`https://txline.txodds.com` for mainnet). The relay auto-refreshes its guest JWT on
+401 and reconnects the SSE stream with exponential backoff on drop.
+
+Live mode keeps recorded fixtures available in the same match picker. The selected
+live fixture uses one shared persistent room; replay fixtures create an independent
+from-kickoff room for each browser connection.
 
 ### Fixture data
 
-Two real fixtures already ship in `data/raw/`: `18237038.jsonl` (France–Spain semi)
-and `18241006.jsonl` (England–Argentina semi), imported from raw `.sse` pulls made
-before the devnet's 2-week replay window could age them out:
+Three real fixtures ship in `data/raw/`: `18237038.jsonl` (France–Spain semi),
+`18241006.jsonl` (England–Argentina semi), and `18257865.jsonl` (France–England
+third-place game):
 
 ```bash
 npm run import:fixture -- /path/to/fixture_18237038.sse

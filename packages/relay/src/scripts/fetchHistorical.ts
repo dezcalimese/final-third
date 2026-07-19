@@ -31,10 +31,20 @@ async function main() {
   const baseUrl = process.env.TXLINE_BASE_URL ?? "https://txline-dev.txodds.com";
   const auth = new TxLineAuth(baseUrl, apiToken);
   const client = auth.client();
+  const requestedIds = new Set(process.argv.slice(2));
+  const fixtures = requestedIds.size > 0
+    ? KNOWN_FIXTURES.filter((fixture) => requestedIds.has(fixture.fixtureId))
+    : KNOWN_FIXTURES;
+
+  if (requestedIds.size > 0 && fixtures.length !== requestedIds.size) {
+    const knownIds = new Set(fixtures.map((fixture) => fixture.fixtureId));
+    const unknownIds = [...requestedIds].filter((fixtureId) => !knownIds.has(fixtureId));
+    throw new Error(`Unknown fixture id(s): ${unknownIds.join(", ")}`);
+  }
 
   fs.mkdirSync(DATA_DIR, { recursive: true });
 
-  for (const fixture of KNOWN_FIXTURES) {
+  for (const fixture of fixtures) {
     const outPath = path.join(DATA_DIR, `${fixture.fixtureId}.jsonl`);
     console.log(`Fetching ${fixture.label} (${fixture.fixtureId})...`);
     try {
