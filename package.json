@@ -1,0 +1,24 @@
+{
+  "name": "final-third",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/shared",
+    "packages/relay"
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/shared && npm run build -w packages/relay && npm run build:web",
+    "build:shared": "npm run build -w packages/shared",
+    "build:web": "npm run build:shared && bun run --cwd packages/web build",
+    "dev:relay": "npm run build:shared && npm run dev -w packages/relay",
+    "dev:web": "npm run build:shared && bun run --cwd packages/web dev",
+    "install:web": "bun install --cwd packages/web",
+    "test:relay": "npm run build:shared && npm run test -w packages/relay",
+    "fetch:historical": "npm run build:shared && npm run fetch:historical -w packages/relay",
+    "gen:synthetic": "npm run build:shared && npm run gen:synthetic -w packages/relay",
+    "import:fixture": "npm run build:shared && npm run import:fixture -w packages/relay --"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

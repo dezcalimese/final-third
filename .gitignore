@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.next/
+*.log
+.env
+.env.local
+.DS_Store
+.turbo/
+out/
+FEEDBACK.md
+DEPLOY.md
+TECHNICAL.md

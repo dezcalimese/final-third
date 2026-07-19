@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import "flag-icons/css/flag-icons.min.css";
+
+html,
+body {
+  background: transparent;
+  color: #f4f7f5;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fi {
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
