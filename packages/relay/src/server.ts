@@ -108,7 +108,7 @@ async function main() {
       loop: true,
       startOffsetMs: REPLAY_START_OFFSET_MS,
     });
-    const room = new GameRoom(f.fixtureId, feed, leaderboard);
+    const room = new GameRoom(f.fixtureId, feed, leaderboard, REPLAY_SPEED);
     room.start();
     return room;
   }

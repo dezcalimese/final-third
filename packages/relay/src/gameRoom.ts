@@ -55,9 +55,10 @@ export class GameRoom {
   constructor(
     public readonly fixtureId: string,
     private readonly feed: FeedSource,
-    private readonly leaderboard: LeaderboardStore
+    private readonly leaderboard: LeaderboardStore,
+    feedSpeed = 1
   ) {
-    this.engine = new RoundEngine(fixtureId);
+    this.engine = new RoundEngine(fixtureId, feedSpeed);
     this.oddsTicker = new SyntheticOddsTicker(ODDS_REFRESH_MS, (pct) => this.onOddsRefresh(pct));
   }
 
