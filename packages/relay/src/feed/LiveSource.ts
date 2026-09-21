@@ -73,6 +73,17 @@ export class LiveSource implements FeedSource {
         return;
       }
 
+      // 403 = token/network rejected or live window closed (e.g. post-tournament).
+      // Retrying forever just spams the API — stop and leave replay mode as the path forward.
+      if (res.status === 403) {
+        console.error(
+          `LiveSource got HTTP 403 from ${this.opts.baseUrl}/api/scores/stream — ` +
+            `live feed unavailable. Set FEED_MODE=replay and restart the relay.`
+        );
+        this.stopped = true;
+        return;
+      }
+
       if (!res.ok || !res.body) {
         throw new Error(`Live stream connect failed: HTTP ${res.status}`);
       }

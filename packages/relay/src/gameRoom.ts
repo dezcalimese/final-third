@@ -18,6 +18,7 @@ import {
   type ServerEvent,
 } from "@final-third/shared";
 import type { FeedSource } from "./feed/FeedSource.js";
+import { ReplaySource } from "./feed/ReplaySource.js";
 import { RoundEngine } from "./engine/roundEngine.js";
 import { gradeGuess } from "./engine/gradeGuess.js";
 import type { LeaderboardStore } from "./store/LeaderboardStore.js";
@@ -154,6 +155,29 @@ export class GameRoom {
       return { ok: false, error: "Already guessed this lull round." };
     }
     this.lullGuesses.set(req.playerId, req);
+    return { ok: true };
+  }
+
+  /**
+   * Replay-only: jump the feed to just before the next ATTACK/DEFENSE chance.
+   * Refuses while a duel round is open/locked so the player isn't yanked mid-call.
+   */
+  skipToNextDanger(): { ok: true } | { ok: false; error: string } {
+    if (!(this.feed instanceof ReplaySource)) {
+      return { ok: false, error: "Jump ahead is only available in replay." };
+    }
+    if (this.isMainRoundActive()) {
+      return { ok: false, error: "Finish this call first." };
+    }
+    // Drop lull without a resolve event — the client clears on a successful skip,
+    // and the next duel arrives within the lead-in window.
+    this.lullRound = null;
+    this.lullGuesses.clear();
+    if (!this.feed.skipToNextDanger()) {
+      return { ok: false, error: "No upcoming chance to call." };
+    }
+    // Keep lull from reopening during the short lead-in before the next trigger.
+    this.lastRoundEndedAt = this.feed.now();
     return { ok: true };
   }
 
