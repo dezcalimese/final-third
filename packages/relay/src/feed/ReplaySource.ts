@@ -3,6 +3,20 @@ import readline from "node:readline";
 import { STATUS_ID, type ScoreMessage } from "@final-third/shared";
 import type { FeedSource } from "./FeedSource.js";
 
+/** Actions that open a round in RoundEngine — keep this list in sync with tryTrigger. */
+const DANGER_ACTIONS = new Set(["danger_possession", "high_danger_possession"]);
+
+/** Brief calm before the first trigger so the UI can paint before the lock window opens. */
+const DANGER_LEAD_IN_MS = 2_000;
+
+function isRoundTrigger(m: ScoreMessage): boolean {
+  return (
+    DANGER_ACTIONS.has(m.Action) &&
+    m.Confirmed !== false &&
+    (m.Participant === 1 || m.Participant === 2)
+  );
+}
+
 export interface ReplaySourceOptions {
   /** Path to a JSONL file of ScoreMessages, one per line, sorted or unsorted by Ts. */
   filePath: string;
@@ -19,6 +33,13 @@ export interface ReplaySourceOptions {
    * through all of that in real time.
    */
   startOffsetMs?: number;
+  /**
+   * Jump to just before the first confirmed danger/high-danger possession that
+   * would open a round. Prefer this over a hand-tuned `startOffsetMs` for demos —
+   * real fixtures typically sit ~5 minutes after kickoff before the first trigger.
+   * Ignored when `startOffsetMs` is set (> 0).
+   */
+  skipToDanger?: boolean;
 }
 
 /**
@@ -34,6 +55,9 @@ export class ReplaySource implements FeedSource {
   private readonly loop: boolean;
   private t0: number | null = null;
   private startedAtRealMs = 0;
+  /** Full message list for the current run (after start-offset filtering). */
+  private messages: ScoreMessage[] = [];
+  private onMessage: ((msg: ScoreMessage) => void) | null = null;
 
   constructor(private readonly opts: ReplaySourceOptions) {
     this.speed = opts.speed ?? 1;
@@ -68,7 +92,45 @@ export class ReplaySource implements FeedSource {
 
   start(onMessage: (msg: ScoreMessage) => void): void {
     this.stopped = false;
+    this.onMessage = onMessage;
     this.runOnce(onMessage);
+  }
+
+  /**
+   * Jump playback to just before the next round-triggering danger event.
+   * Returns false if the fixture isn't loaded yet, nothing is ahead, or we're
+   * already inside the lead-in of the next trigger.
+   */
+  skipToNextDanger(): boolean {
+    if (this.stopped || !this.onMessage || this.messages.length === 0 || this.t0 === null) {
+      return false;
+    }
+
+    const cursor = this.now();
+    let nextDanger = this.messages.find((m) => m.Ts > cursor && isRoundTrigger(m));
+    // Past the last trigger with loop on → wrap to the first one.
+    if (!nextDanger && this.loop) {
+      nextDanger = this.messages.find(isRoundTrigger);
+    }
+    if (!nextDanger) return false;
+
+    const targetTs = nextDanger.Ts - DANGER_LEAD_IN_MS;
+    if (targetTs <= cursor) return false;
+
+    this.clearTimers();
+
+    // Catch up score/clock without replaying skipped danger phases through the engine.
+    // Only sync-deliver messages strictly before the new playhead so scheduleFrom
+    // doesn't fire the same message again at delay 0.
+    const catchUp = this.lastMessageAtOrBefore(targetTs);
+    if (catchUp && catchUp.Ts < targetTs && catchUp.Ts < nextDanger.Ts) {
+      this.onMessage(catchUp);
+    }
+
+    this.t0 = targetTs;
+    this.startedAtRealMs = Date.now();
+    this.scheduleFrom(targetTs, this.onMessage);
+    return true;
   }
 
   private runOnce(onMessage: (msg: ScoreMessage) => void): void {
@@ -77,6 +139,12 @@ export class ReplaySource implements FeedSource {
         if (this.stopped || allMessages.length === 0) return;
 
         let offsetMs = this.opts.startOffsetMs ?? 0;
+        if (offsetMs === 0 && this.opts.skipToDanger) {
+          const firstDanger = allMessages.find(isRoundTrigger);
+          if (firstDanger) {
+            offsetMs = Math.max(0, firstDanger.Ts - allMessages[0].Ts - DANGER_LEAD_IN_MS);
+          }
+        }
         if (offsetMs === 0) {
           const kickoffMsg = allMessages.find((m) => m.StatusId === STATUS_ID.FIRST_HALF);
           if (kickoffMsg) {
@@ -87,35 +155,54 @@ export class ReplaySource implements FeedSource {
         const messages = offsetMs > 0 ? allMessages.filter((m) => m.Ts >= cutoff) : allMessages;
         if (messages.length === 0) return;
 
-        const t0 = messages[0].Ts;
-        this.t0 = t0;
+        this.messages = messages;
+        this.onMessage = onMessage;
+        this.t0 = messages[0].Ts;
         this.startedAtRealMs = Date.now();
-
-        for (const msg of messages) {
-          const delayMs = (msg.Ts - t0) / this.speed;
-          const timer = setTimeout(() => {
-            if (!this.stopped) onMessage(msg);
-          }, Math.max(0, delayMs));
-          this.timers.push(timer);
-        }
-
-        if (this.loop) {
-          const last = messages[messages.length - 1];
-          const totalDelay = (last.Ts - t0) / this.speed;
-          const loopTimer = setTimeout(() => {
-            if (!this.stopped) this.runOnce(onMessage);
-          }, totalDelay + 1000);
-          this.timers.push(loopTimer);
-        }
+        this.scheduleFrom(messages[0].Ts, onMessage);
       })
       .catch((err) => {
         console.error(`ReplaySource failed to load ${this.opts.filePath}:`, err);
       });
   }
 
-  stop(): void {
-    this.stopped = true;
+  private scheduleFrom(fromTs: number, onMessage: (msg: ScoreMessage) => void): void {
+    const remaining = this.messages.filter((m) => m.Ts >= fromTs);
+    if (remaining.length === 0) return;
+
+    for (const msg of remaining) {
+      const delayMs = (msg.Ts - fromTs) / this.speed;
+      const timer = setTimeout(() => {
+        if (!this.stopped) onMessage(msg);
+      }, Math.max(0, delayMs));
+      this.timers.push(timer);
+    }
+
+    if (this.loop) {
+      const last = remaining[remaining.length - 1];
+      const totalDelay = (last.Ts - fromTs) / this.speed;
+      const loopTimer = setTimeout(() => {
+        if (!this.stopped) this.runOnce(onMessage);
+      }, totalDelay + 1000);
+      this.timers.push(loopTimer);
+    }
+  }
+
+  private lastMessageAtOrBefore(ts: number): ScoreMessage | undefined {
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i].Ts <= ts) return this.messages[i];
+    }
+    return undefined;
+  }
+
+  private clearTimers(): void {
     for (const timer of this.timers) clearTimeout(timer);
     this.timers = [];
+  }
+
+  stop(): void {
+    this.stopped = true;
+    this.clearTimers();
+    this.onMessage = null;
   }
 }

@@ -25,6 +25,8 @@ const FEED_MODE = process.env.FEED_MODE ?? "replay";
 // the player's real-world response window (e.g. 4s becomes 2s at 2x).
 const REPLAY_SPEED = Number(process.env.REPLAY_SPEED ?? 1);
 const REPLAY_START_OFFSET_MS = Number(process.env.REPLAY_START_OFFSET_MS ?? 0);
+// Jump replay to just before the first round-triggering danger event (demo default).
+const REPLAY_SKIP_TO_DANGER = (process.env.REPLAY_SKIP_TO_DANGER ?? "true") === "true";
 const LIVE_FIXTURE_ID = process.env.LIVE_FIXTURE_ID;
 
 function discoverReplayFixtures(): { fixtureId: string; filePath: string; label: string }[] {
@@ -96,7 +98,10 @@ async function main() {
   }
 
   for (const f of replayFixtures) {
-    console.log(`Replay fixture available: ${f.fixtureId} (${f.label}) speed=${REPLAY_SPEED}x`);
+    console.log(
+      `Replay fixture available: ${f.fixtureId} (${f.label}) speed=${REPLAY_SPEED}x` +
+        (REPLAY_SKIP_TO_DANGER ? " skipToDanger" : "")
+    );
   }
 
   function createReplayRoom(fixtureId: string): GameRoom | null {
@@ -107,8 +112,9 @@ async function main() {
       speed: REPLAY_SPEED,
       loop: true,
       startOffsetMs: REPLAY_START_OFFSET_MS,
+      skipToDanger: REPLAY_SKIP_TO_DANGER && REPLAY_START_OFFSET_MS === 0,
     });
-    const room = new GameRoom(f.fixtureId, feed, leaderboard);
+    const room = new GameRoom(f.fixtureId, feed, leaderboard, REPLAY_SPEED);
     room.start();
     return room;
   }
@@ -196,6 +202,18 @@ async function main() {
     const room = findRoom(body.fixtureId, body.playerId);
     if (!room) { res.status(404).json({ ok: false, error: "No active room." }); return; }
     const result = await room.submitLullGuess(body as LullGuessRequest);
+    res.status(result.ok ? 200 : 409).json(result);
+  });
+
+  app.post("/api/skip-ahead", (req, res) => {
+    const body = req.body as { playerId?: string; fixtureId?: string };
+    if (!body.playerId) {
+      res.status(400).json({ ok: false, error: "playerId is required." });
+      return;
+    }
+    const room = findRoom(body.fixtureId, body.playerId);
+    if (!room) { res.status(404).json({ ok: false, error: "No active room." }); return; }
+    const result = room.skipToNextDanger();
     res.status(result.ok ? 200 : 409).json(result);
   });
 

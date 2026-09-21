@@ -223,6 +223,25 @@ export function useGameStream(fixtureId: string, walletIdentity?: string | null)
     return (await res.json()) as { ok: boolean; error?: string };
   }, []);
 
+  const skipAhead = useCallback(async () => {
+    const pid = playerIdRef.current;
+    if (!pid) return { ok: false as const, error: "Not connected yet." };
+
+    const res = await fetch(new URL("/api/skip-ahead", RELAY_URL).toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerId: pid, fixtureId: fixtureIdRef.current }),
+    });
+    const result = (await res.json()) as { ok: boolean; error?: string };
+    if (result.ok) {
+      lullRoundRef.current = null;
+      setLullRound(null);
+      setLullReveal(null);
+      setReveal(null);
+    }
+    return result;
+  }, []);
+
   return {
     status,
     playerId,
@@ -239,5 +258,6 @@ export function useGameStream(fixtureId: string, walletIdentity?: string | null)
     lullReveal,
     submitGuess,
     submitLullGuess,
+    skipAhead,
   };
 }

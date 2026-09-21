@@ -1,5 +1,4 @@
-import { AbsoluteFill, Sequence, staticFile } from "remotion";
-import { Audio } from "@remotion/media";
+import { AbsoluteFill } from "remotion";
 import { TransitionSeries, linearTiming } from "@remotion/transitions";
 import { fade } from "@remotion/transitions/fade";
 import { slide } from "@remotion/transitions/slide";
@@ -72,26 +71,6 @@ export const DemoVideo = () => {
           <OutroScene />
         </TransitionSeries.Sequence>
       </TransitionSeries>
-
-      {/* Narration audio tracks — each aligned to its scene's start */}
-      <Sequence from={Math.round(0.5 * FPS)}>
-        <Audio src={staticFile("audio/scene1.wav")} volume={0.9} />
-      </Sequence>
-      <Sequence from={Math.round(10 * FPS + 0.5 * FPS)}>
-        <Audio src={staticFile("audio/scene2.wav")} volume={0.9} />
-      </Sequence>
-      <Sequence from={Math.round((10 + 12) * FPS + 0.5 * FPS)}>
-        <Audio src={staticFile("audio/walkthrough.wav")} volume={0.9} />
-      </Sequence>
-      <Sequence from={Math.round((10 + 12 + 10) * FPS + 0.5 * FPS)}>
-        <Audio src={staticFile("audio/scene3.wav")} volume={0.9} />
-      </Sequence>
-      <Sequence from={Math.round((10 + 12 + 10 + 16) * FPS + 0.5 * FPS)}>
-        <Audio src={staticFile("audio/scene4.wav")} volume={0.9} />
-      </Sequence>
-      <Sequence from={Math.round((10 + 12 + 10 + 16 + 14) * FPS + 0.5 * FPS)}>
-        <Audio src={staticFile("audio/scene5.wav")} volume={0.9} />
-      </Sequence>
     </AbsoluteFill>
   );
 };

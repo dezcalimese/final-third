@@ -37,7 +37,7 @@ export function MatchPicker({ onSelect }: { onSelect: (fixtureId: string) => voi
     <div className="flex min-h-screen flex-col items-center justify-center px-6 py-16">
       <h1 className="mb-2 text-3xl font-black tracking-tight text-white sm:text-4xl">Final Third</h1>
       <p className="mb-10 max-w-md text-center text-sm text-white/50">
-        Join the live match or replay from kickoff — call ATTACK or DEFENSE when danger
+        Pick a recorded match and replay from kickoff — call ATTACK or DEFENSE when danger
         phases fire and build your streak.
       </p>
 

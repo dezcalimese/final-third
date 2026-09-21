@@ -30,8 +30,11 @@ export class RoundEngine {
   private reliabilityPausedAtTs: number | null = null;
   private roundCounter = 0;
   private nowTs = 0;
+  private readonly feedSpeed: number;
 
-  constructor(private readonly fixtureId: string) {}
+  constructor(private readonly fixtureId: string, feedSpeed = 1) {
+    this.feedSpeed = feedSpeed;
+  }
 
   /** Advance the engine's notion of "now" without a message (e.g. a 250ms server tick). */
   tick(ts: number): RoundEngineEvent[] {
@@ -135,7 +138,7 @@ export class RoundEngine {
       defender,
       triggerAction: msg.Action,
       triggerTs: msg.Ts,
-      lockDeadlineTs: msg.Ts + LOCK_WINDOW_MS,
+      lockDeadlineTs: msg.Ts + LOCK_WINDOW_MS * this.feedSpeed,
       status: "open",
     };
     this.currentRound = round;

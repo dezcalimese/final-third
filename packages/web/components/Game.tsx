@@ -21,6 +21,7 @@ export function Game({ fixtureId, onBack }: { fixtureId: string; onBack: () => v
   const { user } = usePrivy();
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [skipping, setSkipping] = useState(false);
   const reduceMotion = useReducedMotion();
   const {
     status,
@@ -38,6 +39,7 @@ export function Game({ fixtureId, onBack }: { fixtureId: string; onBack: () => v
     lullReveal,
     submitGuess,
     submitLullGuess,
+    skipAhead,
   } = useGameStream(fixtureId, user?.wallet?.address ?? null);
 
   const escalationTint =
@@ -46,6 +48,18 @@ export function Game({ fixtureId, onBack }: { fixtureId: string; onBack: () => v
       : null;
 
   const ballSpeed = round?.status === "locked" ? 1.6 : possession?.tier === "high_danger" ? 1.35 : 1;
+  const duelActive = round?.status === "open" || round?.status === "locked";
+  const showSkipAhead = status === "open" && !duelActive;
+
+  async function handleSkipAhead() {
+    if (!showSkipAhead || skipping) return;
+    setSkipping(true);
+    try {
+      await skipAhead();
+    } finally {
+      setSkipping(false);
+    }
+  }
 
   return (
     <>
@@ -90,6 +104,16 @@ export function Game({ fixtureId, onBack }: { fixtureId: string; onBack: () => v
               lullReveal={lullReveal}
               onLullGuess={submitLullGuess}
             />
+            {showSkipAhead && (
+              <button
+                type="button"
+                onClick={handleSkipAhead}
+                disabled={skipping}
+                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] font-semibold uppercase tracking-widest text-white/60 transition-colors hover:border-white/20 hover:bg-white/10 hover:text-white/85 disabled:opacity-40"
+              >
+                {skipping ? "Jumping…" : "Next chance"}
+              </button>
+            )}
           </section>
 
           <MatchStatsPanel stats={matchState.stats} fixture={fixture} />
